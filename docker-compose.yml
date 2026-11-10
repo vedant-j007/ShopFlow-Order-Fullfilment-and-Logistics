@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432" # host 5433, so it doesn't clash with a local PostgreSQL on 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Run once, in file-name order, the first time the volume is empty.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/triggers.sql:/docker-entrypoint-initdb.d/02-triggers.sql:ro
+      - ./db/procedures.sql:/docker-entrypoint-initdb.d/03-procedures.sql:ro
+      - ./db/views.sql:/docker-entrypoint-initdb.d/04-views.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/05-seed.sql:ro
+      # Whole folder, for running analytics/tests later with `docker compose exec`.
+      - ./db:/db:ro
+    healthcheck:
+      # TCP check: only passes after the init scripts finish and the real server starts.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d ecommerce"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/ecommerce
+      JWT_SECRET: change-me-for-anything-real
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
